@@ -15,6 +15,7 @@ XIAOMI_CONTROLLER = 'Xiaomi'
 MQTT_CONTROLLER = 'MQTT'
 LOOKIN_CONTROLLER = 'LOOKin'
 ESPHOME_CONTROLLER = 'ESPHome'
+REMO_CONTROLLER = 'Remo'
 
 ENC_BASE64 = 'Base64'
 ENC_HEX = 'Hex'
@@ -26,7 +27,7 @@ XIAOMI_COMMANDS_ENCODING = [ENC_PRONTO, ENC_RAW]
 MQTT_COMMANDS_ENCODING = [ENC_RAW]
 LOOKIN_COMMANDS_ENCODING = [ENC_PRONTO, ENC_RAW]
 ESPHOME_COMMANDS_ENCODING = [ENC_RAW]
-
+REMO_COMMANDS_ENCODING = [ENC_RAW]
 
 def get_controller(hass, controller, encoding, controller_data, delay):
     """Return a controller compatible with the specification provided."""
@@ -35,7 +36,8 @@ def get_controller(hass, controller, encoding, controller_data, delay):
         XIAOMI_CONTROLLER: XiaomiController,
         MQTT_CONTROLLER: MQTTController,
         LOOKIN_CONTROLLER: LookinController,
-        ESPHOME_CONTROLLER: ESPHomeController
+        ESPHOME_CONTROLLER: ESPHomeController,
+        REMO_CONTROLLER: RemoController
     }
     try:
         return controllers[controller](hass, controller, encoding, controller_data, delay)
@@ -184,3 +186,28 @@ class ESPHomeController(AbstractController):
 
         await self.hass.services.async_call(
             'esphome', self._controller_data, service_data)
+        
+
+class RemoController(AbstractController):
+    """Controls a NatureRemo device."""
+
+    def check_encoding(self, encoding):
+        """Check if the encoding is supported by the controller."""
+        if encoding not in REMO_COMMANDS_ENCODING:
+            raise Exception("The encoding is not supported "
+                            "by the NatureRemo controller.")
+
+    def _post(self, data):
+        """Post data to the given URL."""
+        url = f"http://{self._controller_data}/messages"
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Requested-With': 'local'
+        }
+        # json_data = json.loads(data)
+        return requests.post(url, headers=headers, data=data)
+
+    async def send(self, command):
+        """Send a command."""
+        await self.hass.async_add_executor_job(self._post, command)
