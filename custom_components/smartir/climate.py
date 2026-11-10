@@ -116,6 +116,7 @@ class SmartIRClimate(ClimateEntity, RestoreEntity):
         self._commands_encoding = device_data['commandsEncoding']
         self._min_temperature = device_data['minTemperature']
         self._max_temperature = device_data['maxTemperature']
+        self._temperature_ranges = device_data.get('temperatureRanges', {})
         self._precision = device_data['precision']
 
         valid_hvac_modes = [x for x in device_data['operationModes'] if x in HVAC_MODES]
@@ -125,7 +126,8 @@ class SmartIRClimate(ClimateEntity, RestoreEntity):
         self._swing_modes = device_data.get('swingModes')
         self._commands = device_data['commands']
 
-        self._target_temperature = self._min_temperature
+        self._target_temperature = self._temperature_range(
+            self._operation_modes[1])['min']
         self._hvac_mode = HVACMode.OFF
         self._current_fan_mode = self._fan_modes[0]
         self._current_swing_mode = None
@@ -172,6 +174,9 @@ class SmartIRClimate(ClimateEntity, RestoreEntity):
             if 'last_on_operation' in last_state.attributes:
                 self._last_on_operation = last_state.attributes['last_on_operation']
 
+            if self._hvac_mode != HVACMode.OFF:
+                self._clamp_target_temperature(self._hvac_mode)
+
         if self._temperature_sensor:
             async_track_state_change_event(self.hass, self._temperature_sensor, 
                                            self._async_temp_sensor_changed)
@@ -214,15 +219,35 @@ class SmartIRClimate(ClimateEntity, RestoreEntity):
         """Return the unit of measurement."""
         return self._unit
 
+    def _temperature_range(self, hvac_mode):
+        """Return the target temperature range for an operation mode."""
+        return self._temperature_ranges.get(hvac_mode, {
+            'min': self._min_temperature,
+            'max': self._max_temperature
+        })
+
+    def _clamp_target_temperature(self, hvac_mode):
+        """Keep the target temperature within the range of an operation mode."""
+        temperature_range = self._temperature_range(hvac_mode)
+        self._target_temperature = min(
+            max(self._target_temperature, temperature_range['min']),
+            temperature_range['max'])
+
+    def _temperature_range_for_mode(self, hvac_mode):
+        """Return the target temperature range for an operation mode."""
+        if hvac_mode == HVACMode.OFF and self._last_on_operation is not None:
+            hvac_mode = self._last_on_operation
+        return self._temperature_range(hvac_mode)
+
     @property
     def min_temp(self):
-        """Return the polling state."""
-        return self._min_temperature
+        """Return the minimum target temperature for the current operation mode."""
+        return self._temperature_range_for_mode(self._hvac_mode)['min']
         
     @property
     def max_temp(self):
-        """Return the polling state."""
-        return self._max_temperature
+        """Return the maximum target temperature for the current operation mode."""
+        return self._temperature_range_for_mode(self._hvac_mode)['max']
 
     @property
     def target_temperature(self):
@@ -303,8 +328,11 @@ class SmartIRClimate(ClimateEntity, RestoreEntity):
           
         if temperature is None:
             return
-            
-        if temperature < self._min_temperature or temperature > self._max_temperature:
+
+        temperature_range = self._temperature_range_for_mode(
+            hvac_mode or self._hvac_mode)
+        if (temperature < temperature_range['min'] or
+                temperature > temperature_range['max']):
             _LOGGER.warning('The temperature value is out of min/max range') 
             return
 
@@ -328,6 +356,7 @@ class SmartIRClimate(ClimateEntity, RestoreEntity):
         
         if not hvac_mode == HVACMode.OFF:
             self._last_on_operation = hvac_mode
+            self._clamp_target_temperature(hvac_mode)
 
         await self.send_command()
         self.async_write_ha_state()
@@ -424,6 +453,7 @@ class SmartIRClimate(ClimateEntity, RestoreEntity):
             self._on_by_remote = True
             if self._power_sensor_restore_state == True and self._last_on_operation is not None:
                 self._hvac_mode = self._last_on_operation
+                self._clamp_target_temperature(self._hvac_mode)
             else:
                 self._hvac_mode = STATE_ON
 

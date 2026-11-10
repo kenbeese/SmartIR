@@ -19,6 +19,23 @@ _Please note that the device_code field only accepts positive numbers. The .json
 | `power_sensor` | string | optional | *entity_id* for a sensor that monitors whether your device is actually `on` or `off`. This may be a power monitor sensor. (Accepts only on/off states) |
 | `power_sensor_restore_state` | boolean | optional | If `power_sensor` is set, and the device is likely to turn off and back on while still in the set mode (for instance, a minisplit cycling on and off while in heating or cooling mode), setting this to `true` will cause the climate state to update dynamically, following the state of the `power_sensor`. |
 
+Climate code files use `minTemperature` and `maxTemperature` as the default target
+temperature range. To specify different ranges for individual operation modes, add
+an optional `temperatureRanges` object to the device JSON. Mode names must match
+the values in `operationModes`; modes without an entry use the default range.
+When changing modes, the current target temperature is clamped to the new range.
+
+```json
+{
+  "temperatureRanges": {
+    "dry": { "min": -2, "max": 2 },
+    "auto": { "min": -5, "max": 5 },
+    "cool": { "min": 16, "max": 30 },
+    "heat": { "min": 16, "max": 30 }
+  }
+}
+```
+
 ## Example (using broadlink controller):
 Add a Broadlink RM device named "Bedroom" via config flow (read the [docs](https://www.home-assistant.io/integrations/broadlink/)).
 
